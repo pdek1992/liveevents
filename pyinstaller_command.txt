@@ -1,0 +1,1 @@
+pyinstaller --noconsole --onefile --icon=logo.ico  --add-data "values.txt;." --add-data "background.jfif;." --add-data "logo.jfif;." app.py
