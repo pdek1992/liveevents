@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Sony Live Events Schedule - Description</title>
 </head>
 <body>
 
