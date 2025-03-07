@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
+
+<h>Sony Live Events Schedule - Description</h>
 </head>
 <body>
-
 <h1>Sony Live Events Desktop Application</h1>
 
 <p>This application creates an image-based live events schedule with the following features:</p>
