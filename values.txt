@@ -6,4 +6,4 @@ skip_rows=2             # Actual data starts with 3rd row in feed planner excel
 run_frequency=30        # Run this checks every seconds
 display_rows=8          # Count of rows to display in image
 upcoming_color=yellow   # Color for upcoming events
-upcoming_event_in=600   # Display upcoming events in next 10 min
+upcoming_event_in=600   # Display upcoming events in next 600 sec
