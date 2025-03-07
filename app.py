@@ -66,6 +66,8 @@ yet_to_start_color =  config.get('yet_to_start', 'grey')
 skip_rows =  int(config.get('skip_rows', 2))
 run_frequency =  int(config.get('run_frequency', 60))
 display_rows = int(config.get('display_rows', 8))
+upcoming_color = config.get('upcoming_color', 'yellow')
+upcoming_event_in = int(config.get('upcoming_event_in', 600))
 
 def monitor_directory(directory):
     #last_processed_file = None
@@ -91,7 +93,7 @@ def monitor_directory(directory):
                 #last_processed_file = latest_file  # Mark as processed
 
         except Exception as e:
-            logger.error(f"Error: {e}. Retrying in {grace_period} seconds...")
+            logger.error(f"Error: {e}. Retrying in {run_frequency} seconds...")
 
         time.sleep(run_frequency)  # Retry after 30 seconds
 
@@ -109,6 +111,7 @@ def process_file(file_path):
 
     df = pd.read_excel(file_path, sheet_name="PLANNER", skiprows=2)
 
+    # Merge additional channel columns if present
     if "CHANNEL" in df.columns:
         channel_index = df.columns.get_loc("CHANNEL")
         potential_split_columns = [col for col in df.columns[channel_index + 1:] if "Unnamed:" in str(col)]
@@ -121,36 +124,39 @@ def process_file(file_path):
                 )
                 df = df.drop(columns=[split_col])
 
+    # Select only required columns
     selected_columns = [col for col in required_columns.keys() if col in df.columns]
     df = df[selected_columns]
 
+    # Filter only "live" events
     if "TELECAST" in df.columns:
         df = df[df["TELECAST"].str.contains("live", case=False, na=False)]
 
-    today = datetime.now().date()
+    # Convert IST time column to datetime
     df['IST(+ 5.5)'] = pd.to_datetime(df['IST(+ 5.5)'], errors='coerce')
-    df = df[df['IST(+ 5.5)'].dt.date == today]
 
-    df = df.sort_values(by='IST(+ 5.5)')
-   
-    # Filter out finished events
-    now = datetime.now()
+    # Compute end time based on duration
     df['End Time'] = df.apply(
-    lambda row: row['IST(+ 5.5)'] + timedelta(hours=int(row['DUR']), minutes=(row['DUR'] % 1) * 60) + timedelta(minutes=grace_period)
-    if pd.notna(row['IST(+ 5.5)']) and pd.notna(row['DUR'])
-    else None, axis=1)
-    
-    df = df[df['End Time'] > now]  # Keep only upcoming or ongoing events
-    df = df.drop(columns=['End Time'])  # Remove temporary column
+        lambda row: row['IST(+ 5.5)'] + timedelta(hours=int(row['DUR']), minutes=(row['DUR'] % 1) * 60) + timedelta(minutes=grace_period)
+        if pd.notna(row['IST(+ 5.5)']) and pd.notna(row['DUR'])
+        else None, axis=1
+    )
+
+    # Get current datetime
+    now = datetime.now()
+
+    # Keep events that are still running, including cross-date events
+    df = df[df['End Time'] > now]
+
+    # Drop temporary end time column
+    df = df.drop(columns=['End Time'])
 
     # Replace NaN with empty string in all columns
-    
     df.fillna('', inplace=True)
-    
 
-    #print(df.head())
-    #print("done")
+    # Generate image from data
     create_image(df)
+
     return df
 
 def wrap_text(draw, text, font, max_width):
@@ -221,7 +227,9 @@ def create_image(df):
         finished = False
         start_time = None
         duration_str = None
+        upcoming_timer = False  
         now = datetime.now()
+        
         if "IST(+ 5.5)" in row and "DUR" in row:
 
             start_time = row["IST(+ 5.5)"]
@@ -234,8 +242,11 @@ def create_image(df):
                 is_running = True
             elif now < start_time:
                 yet_to_start = True
+                if 0 <= (start_time - now).total_seconds() <= upcoming_event_in:
+                  upcoming_timer = True    
             elif end_time < now:
                 finished = True
+                
            
 
         for col_idx, header in enumerate(headers):
@@ -247,6 +258,8 @@ def create_image(df):
                 fill_color = yet_to_start_color
             if finished:
                 fill_color = finished_color
+            if upcoming_timer:
+                fill_color = upcoming_color
             
             
 
