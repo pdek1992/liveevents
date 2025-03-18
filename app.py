@@ -10,29 +10,25 @@ import tkinter as tk
 import logging
 import logging.handlers
 import sys
+import glob
+import pygame
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and PyInstaller """
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
-#log_file = resource_path("app.log")
 log_file = ".\live.log"
 
-# Configure logging
 logger = logging.getLogger("MyAppLogger")
-logger.setLevel(logging.DEBUG)  # Log everything (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+logger.setLevel(logging.DEBUG)  
 
-# Create a rotating file handler (auto-rotates after 48 hours)
 handler = logging.handlers.TimedRotatingFileHandler(
     log_file, when="h", interval=48, backupCount=5, encoding="utf-8"
 )
 handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
-# Add the handler to the logger
 logger.addHandler(handler)
 
-# Enable console logging (optional)
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 logger.addHandler(console_handler)
@@ -46,19 +42,18 @@ def read_config(file_path):
     config = {}
     with open(file_path, 'r') as file:
         for line in file:
-            line = line.split('#', 1)[0].strip()  # Remove comments and strip spaces
-            if not line:  # Skip empty lines
+            line = line.split('#', 1)[0].strip()  
+            if not line:  
                 continue
             if '=' in line:
-                key, value = map(str.strip, line.split('=', 1))  # Split and strip spaces/tabs
+                key, value = map(str.strip, line.split('=', 1))  
                 config[key] = value
     return config
     
 
-# Read configuration from external file
+
 config = read_config('values.txt')
 
-# Extract values from config
 grace_period = int(config.get('grace_period', 5))  
 running_color = config.get('running', 'red')
 finished_color =  config.get('finished', 'white')
@@ -68,6 +63,15 @@ run_frequency =  int(config.get('run_frequency', 60))
 display_rows = int(config.get('display_rows', 8))
 upcoming_color = config.get('upcoming_color', 'yellow')
 upcoming_event_in = int(config.get('upcoming_event_in', 600))
+#audio_alarm = bool(config.get("audio_alarm", False))
+raw_value = config.get("audio_alarm", "false")  
+audio_alarm = raw_value.strip().lower() in ["true", "1", "yes"]
+flash_color = config.get('flash_color', 'red')
+flash_freq =  int(config.get('flash_freq', 60))
+txt_size =  int(config.get('txt_size', 60))
+audio_before =  int(config.get('audio_before', 60))
+flash_before_minutes =  int(config.get('flash_before_minutes', 5))
+font_size = int(config.get('font_size', 35))
 
 def monitor_directory(directory):
     #last_processed_file = None
@@ -79,6 +83,7 @@ def monitor_directory(directory):
                 #print("No Excel or ODS files found. Waiting...")
                 logger.error("No Excel or ODS files found. Waiting...")
             else:
+                global latest_file
                 latest_file = max(files, key=lambda f: os.path.getmtime(os.path.join(directory, f)))
                 file_path = os.path.join(directory, latest_file)
                 logger.info(f"using {latest_file} from {file_path}")
@@ -95,8 +100,7 @@ def monitor_directory(directory):
         except Exception as e:
             logger.error(f"Error: {e}. Retrying in {run_frequency} seconds...")
 
-        time.sleep(run_frequency)  # Retry after 30 seconds
-
+        time.sleep(run_frequency) 
 def process_file(file_path):
     required_columns = {
         "IST(+ 5.5)": "IST(+ 5.5)",
@@ -111,7 +115,6 @@ def process_file(file_path):
 
     df = pd.read_excel(file_path, sheet_name="PLANNER", skiprows=2)
 
-    # Merge additional channel columns if present
     if "CHANNEL" in df.columns:
         channel_index = df.columns.get_loc("CHANNEL")
         potential_split_columns = [col for col in df.columns[channel_index + 1:] if "Unnamed:" in str(col)]
@@ -124,28 +127,22 @@ def process_file(file_path):
                 )
                 df = df.drop(columns=[split_col])
 
-    # Select only required columns
     selected_columns = [col for col in required_columns.keys() if col in df.columns]
     df = df[selected_columns]
 
-    # Filter only "live" events
     if "TELECAST" in df.columns:
         df = df[df["TELECAST"].str.contains("live", case=False, na=False)]
 
-    # Convert IST time column to datetime
     df['IST(+ 5.5)'] = pd.to_datetime(df['IST(+ 5.5)'], errors='coerce')
 
-    # Compute end time based on duration
     df['End Time'] = df.apply(
         lambda row: row['IST(+ 5.5)'] + timedelta(hours=int(row['DUR']), minutes=(row['DUR'] % 1) * 60) + timedelta(minutes=grace_period)
         if pd.notna(row['IST(+ 5.5)']) and pd.notna(row['DUR'])
         else None, axis=1
     )
 
-    # Get current datetime
     now = datetime.now()
 
-    # Keep events that are still running, including cross-date events
     df = df[df['End Time'] > now]
 
     # Drop temporary end time column
@@ -180,7 +177,7 @@ def create_image(df):
     if not os.path.exists(background_path):
         background_path = 'default_background.jfif'
     if not os.path.exists(logo_path):
-        logo_path = 'default_logo.jfif'
+        logo_path = 'default_logo.png'
 
     background = Image.open(background_path).convert('RGBA')
     logo = Image.open(logo_path).convert('RGBA')
@@ -197,10 +194,17 @@ def create_image(df):
 
     logo_size = (int(image.width * 0.05), int(image.width * 0.05))
     logo = logo.resize(logo_size)
-    image.paste(logo, (20, 20), logo)
+    image.paste(logo, (0, 0), logo)
     draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype(get_resource_path("arialbd.ttf"), 24)
-    y_start, x_start, row_height = 0, 0, 50
+    
+    
+    
+    font = ImageFont.truetype(get_resource_path("arialbd.ttf"), font_size)
+    file_name_x = screen_width // 2.2 - (draw.textbbox((0, 0), latest_file, font=font)[2] // 2)
+    font_filename = ImageFont.truetype(get_resource_path("arialbd.ttf"), 40)
+
+    draw.text((file_name_x, 30), latest_file, font=font_filename, fill="white")
+    y_start, x_start, row_height = 100, 0, 50
     column_widths = [int(screen_width * 0.15625), int(screen_width * 0.05208), int(screen_width * 0.1302), int(screen_width * 0.24218), int(screen_width * 0.10416), int(screen_width * 0.10416), int(screen_width * 0.10416), int(screen_width * 0.10416)]
     headers = ["IST(+ 5.5)", "DUR", "TELECAST", "DESCRIPTION", "CHANNEL", "LINE INPUT", "SOURCE", "CIRCUIT"]
     logger.info(f"using headers {headers}")
@@ -243,7 +247,11 @@ def create_image(df):
             elif now < start_time:
                 yet_to_start = True
                 if 0 <= (start_time - now).total_seconds() <= upcoming_event_in:
-                  upcoming_timer = True    
+                    upcoming_timer = True   
+                if 0 <= (start_time - now).total_seconds() <= audio_before:
+                    if audio_alarm:
+                        print(f"Audio Alarm: {audio_alarm} (Type: {type(audio_alarm)})")
+                        play_audio()
             elif end_time < now:
                 finished = True
                 
@@ -260,8 +268,6 @@ def create_image(df):
                 fill_color = finished_color
             if upcoming_timer:
                 fill_color = upcoming_color
-            
-            
 
             draw.rectangle([(x_position, y_position), (x_position + column_widths[col_idx], y_position + row_height * max_lines)],
                             outline="black", fill=fill_color)
@@ -279,6 +285,30 @@ def create_image(df):
     image = image.convert('RGB')
     image.save(os.path.join(os.getcwd(), 'output_image.png'))
     logger.info("Image created: output_image.png")
+    
+def play_audio():
+    audio_files = glob.glob("audio.*")  # Search for audio files
+
+    if audio_files:
+        file_to_play = audio_files[0]  # Play the first matching file
+        logger.info(f"Playing: {file_to_play}")
+
+        try:
+            pygame.mixer.init()  # Initialize the mixer
+            pygame.mixer.music.load(file_to_play)  # Load the audio file
+            pygame.mixer.music.play()  # Play audio
+            
+            while pygame.mixer.music.get_busy():  # Wait for audio to finish
+                pygame.time.Clock().tick(10)  
+            
+            pygame.mixer.quit()  # Release the file immediately
+            logger.info("Playback finished successfully.")
+
+        except Exception as e:
+            logger.error(f"Error playing sound: {e}")
+    else:
+        logger.error("No audio files found with name 'audio.*'")
+
 
 def set_as_wallpaper(image_path):
     ctypes.windll.user32.SystemParametersInfoW(20, 0, image_path, 0)
